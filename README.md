@@ -1,36 +1,190 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# 📄 Notification System Design Document
 
-## Getting Started
+## Objective
 
-First, run the development server:
+Design and implement a **lightweight, cost-effective, and scalable notification system** capable of supporting like-based notifications for **10,000+ daily active users** without impacting user-facing application performance.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## System Architecture Overview
+
+This system decouples **notification creation** (write-heavy operations) from **notification delivery** (read-heavy operations) using a **BullMQ-based job queue** and a background **worker service**. Notifications are persisted in **MongoDB**, while **Redis** is used for rapid state access, specifically for unread count tracking.
+
+---
+
+## API Specification
+
+### `POST /api/like`
+
+**Purpose:** Queue a like notification
+
+**Request Body:**
+
+```json
+{
+  "likerId": "string",
+  "recipientId": "string"
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**Response:**
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+```json
+{
+  "success": true
+}
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+* Adds a job to the BullMQ queue.
+* The worker processes the job asynchronously.
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+### `GET /api/summary?recipientId=string`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Purpose:** Retrieve the unread notification count
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Response:**
 
-## Deploy on Vercel
+```json
+{
+  "unreadCount": 3
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+* Reads from Redis key `notifications:unread:<recipientId>`.
+* Used to update the notification badge on the UI.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+### `GET /api/notifications?recipientId=string`
+
+**Purpose:** Retrieve the latest 10 notifications
+
+**Response:**
+
+```json
+[
+  {
+    "_id": "string",
+    "recipientId": "string",
+    "message": "string",
+    "isRead": true,
+    "createdAt": "ISODate"
+  }
+]
+```
+
+* Fetches from MongoDB, sorted by `createdAt`, limited to 10 entries.
+* Marks any unread notifications as read.
+* Resets the unread count in Redis to 0.
+
+---
+
+## Key System Components
+
+### 1. **Notification Queue (BullMQ)**
+
+* Queue name: `notifications`
+* Facilitates asynchronous job processing
+* Mitigates spikes in write operations
+
+### 2. **Worker Service**
+
+* Listens to the `notifications` queue
+* For each job:
+
+  * Creates a new notification document in MongoDB
+  * Increments Redis key `notifications:unread:<recipientId>`
+
+### 3. **Socket Connections**
+* When users connect via socket, they receive real-time notification updates
+* A `join` event is emitted from the frontend to establish the connection
+* Socket connections are automatically disconnected when users leave the page
+
+### 4. **MongoDB**
+
+* Collection: `Notification`
+
+```json
+{
+  "_id": ObjectId,
+  "recipientId": "string",
+  "message": "string",
+  "isRead": "boolean",
+  "createdAt": "date"
+}
+```
+
+* Indexes: `recipientId`, `createdAt`
+
+### 4. **Redis**
+
+* Key format: `notifications:unread:<recipientId>`
+* Type: Integer
+* Purpose: Fast O(1) access to unread count for UI rendering
+
+---
+
+## Notification Flow
+
+### 1. Liking a Post
+
+* `POST /api/like` is triggered with `likerId` and `recipientId`
+* Job is enqueued in the `notifications` queue
+
+### 2. Worker Execution
+
+* Dequeues the job
+* Persists notification to MongoDB
+* Increments unread count in Redis
+
+### 3. Fetching Notifications
+
+* `GET /api/summary`: Returns unread count from Redis
+* `GET /api/notifications`:
+
+  * Fetches the 10 most recent notifications from MongoDB
+  * Marks unread ones as read
+  * Resets the Redis unread counter
+
+
+### 4. **Socket Communication Flow**
+* A `join` event is emitted from the frontend and a connection is established
+* The backend emits a `notification:summary` event every 10 seconds to update unread notification counts from redis.
+
+---
+
+## Scalability Features
+
+| Feature           | Benefit                                  |
+| ----------------- | ---------------------------------------- |
+| Queue (BullMQ) | Decouples writes, handles traffic spikes |
+| Redis Counter  | Instantaneous unread count lookups       |
+| DB Indexes     | Fast notification retrieval              |
+| MongoDB         | Scalable and flexible document storage   |
+| Async Worker   | Improves API response time               |
+
+---
+
+## Future Enhancements
+
+* Implement retry logic in BullMQ for fault tolerance
+* Add deduplication to avoid repeated likes from the same user
+* Introduce TTL (time-to-live) for automatic cleanup of old notifications
+
+---
+
+## Conclusion
+
+This design delivers a robust, scalable notification system tailored for high user concurrency. It ensures:
+
+* Fast and responsive user interfaces
+* Scalable architecture suited for 10k+ daily users
+* Efficient separation of responsibilities between services
+
+
+
+## How does it work:
+
+* To check User profile Notifications  Go to /user/:RecipientID
