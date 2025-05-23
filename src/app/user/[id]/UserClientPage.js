@@ -24,7 +24,7 @@ export default function UserClientPage({ userId }) {
   
   useEffect(() => {
     if(userId){
-      const socketConnection = io('http://0.0.0.0:4000');
+      const socketConnection = io('https://notifications-2v7a.onrender.com/');
       socketConnection.emit('join', userId);
       socketConnection.on('notification:summary', ({ unreadCount }) => {
         setUnreadCount(unreadCount);
