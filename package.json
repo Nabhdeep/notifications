@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start",
+    "start": "concurrently \"node src/socket-server/index.js\" \"next start\"",
     "lint": "next lint"
   },
   "dependencies": {
