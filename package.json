@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "concurrently \"node src/socket-server/index.js\" \"node src/worker/notificationWorker.js\" \"next start\"",
+    "start": "concurrently \"node src/worker/notificationWorker.js\" \"next start\"",
     "lint": "next lint"
   },
   "dependencies": {
