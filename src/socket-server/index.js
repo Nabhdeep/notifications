@@ -2,7 +2,6 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import Redis from 'ioredis';
-import "../worker/notificationWorker.js"
 
 const app = express();
 const server = createServer(app);
